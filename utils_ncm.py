@@ -13,7 +13,9 @@ def generate_plot(user_query, df):
         if ncm_cols:
             st.write("**📊 Gráfico: Distribuição de NCMs**")
             fig, ax = plt.subplots(figsize=(10, 6))
-            ncm_counts = df[ncm_cols[0]].value_counts().head(10)
+            # Normaliza NCMs para agrupamento
+            ncm_normalized = df[ncm_cols[0]].astype(str).str.replace('.', '').str.replace('-', '')
+            ncm_counts = ncm_normalized.value_counts().head(10)
             ncm_counts.plot(kind='bar', ax=ax, color='steelblue')
             ax.set_title('Top 10 NCMs Mais Frequentes')
             ax.set_xlabel('NCM')
@@ -27,8 +29,11 @@ def generate_plot(user_query, df):
         if valor_cols:
             st.write("**💰 Gráfico: Valores por NCM**")
             fig, ax = plt.subplots(figsize=(10, 6))
+            # Normaliza NCMs
+            df_temp = df.copy()
+            df_temp['NCM_norm'] = df_temp[ncm_cols[0]].astype(str).str.replace('.', '').str.replace('-', '')
             # Agrupa por NCM e soma valores
-            grouped = df.groupby(ncm_cols[0])[valor_cols[0]].sum().sort_values(ascending=False).head(10)
+            grouped = df_temp.groupby('NCM_norm')[valor_cols[0]].sum().sort_values(ascending=False).head(10)
             grouped.plot(kind='bar', ax=ax, color='green')
             ax.set_title('Top 10 NCMs por Valor Total')
             ax.set_xlabel('NCM')
@@ -37,35 +42,99 @@ def generate_plot(user_query, df):
             plt.tight_layout()
             st.pyplot(fig)
 
-def auto_validate_ncm(df):
+def quick_ncm_validation(df):
     """
-    Função auxiliar para validação básica de NCM
-    (O agente fará a validação principal, esta é apenas um helper)
+    Validação rápida e manual de NCM quando o agente falhar
     """
+    st.subheader("🔧 Validação Manual Rápida")
+    
+    # Identifica colunas
     ncm_cols = [col for col in df.columns if 'ncm' in col.lower()]
+    desc_cols = [col for col in df.columns if any(x in col.lower() for x in ['descri', 'produto', 'desc'])]
     
     if not ncm_cols:
-        return None
+        st.error("❌ Coluna NCM não encontrada no arquivo")
+        st.info(f"Colunas disponíveis: {df.columns.tolist()}")
+        return
     
     ncm_col = ncm_cols[0]
-    issues = []
+    desc_col = desc_cols[0] if desc_cols else None
     
-    for idx, row in df.iterrows():
-        ncm = str(row[ncm_col])
-        
-        # Remove pontos e espaços
-        ncm_clean = ncm.replace('.', '').replace(' ', '').replace('-', '')
-        
-        # Verifica formato (deve ter 8 dígitos)
-        if not ncm_clean.isdigit() or len(ncm_clean) != 8:
-            issues.append({
-                'linha': idx + 1,
-                'ncm': ncm,
-                'problema': 'Formato inválido (deve ter 8 dígitos)',
-                'severidade': 'CRÍTICA'
-            })
+    st.success(f"✅ Coluna NCM encontrada: **{ncm_col}**")
+    if desc_col:
+        st.success(f"✅ Coluna Descrição encontrada: **{desc_col}**")
     
-    return issues
+    # Normaliza NCMs
+    df_temp = df.copy()
+    df_temp['NCM_normalizado'] = df_temp[ncm_col].astype(str).str.replace('.', '').str.replace('-', '').str.strip()
+    
+    # Estatísticas básicas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        total_registros = len(df_temp)
+        st.metric("Total de Produtos", total_registros)
+    with col2:
+        ncms_unicos = df_temp['NCM_normalizado'].nunique()
+        st.metric("NCMs Únicos", ncms_unicos)
+    with col3:
+        ncms_validos = df_temp['NCM_normalizado'].str.len().eq(8).sum()
+        perc_valido = (ncms_validos / total_registros * 100)
+        st.metric("NCMs com 8 dígitos", f"{perc_valido:.1f}%")
+    
+    # Lista NCMs únicos
+    st.write("### 📋 NCMs Encontrados")
+    
+    if desc_col:
+        ncm_summary = df_temp.groupby('NCM_normalizado').agg({
+            desc_col: 'first',
+            ncm_col: 'count'
+        }).rename(columns={ncm_col: 'Quantidade'})
+        ncm_summary = ncm_summary.reset_index()
+        ncm_summary.columns = ['NCM', 'Exemplo de Produto', 'Quantidade']
+    else:
+        ncm_summary = df_temp['NCM_normalizado'].value_counts().reset_index()
+        ncm_summary.columns = ['NCM', 'Quantidade']
+    
+    st.dataframe(ncm_summary, use_container_width=True)
+    
+    # NCMs comuns do setor pet
+    st.write("### ✅ NCMs Comuns no Setor Pet")
+    ncms_corretos_pet = {
+        '23099010': 'Rações para cães/gatos',
+        '23099030': 'Rações para equinos',
+        '23099090': 'Outras preparações para animais',
+        '30049099': 'Medicamentos veterinários',
+        '30023000': 'Vacinas veterinárias',
+        '90183100': 'Seringas',
+        '42050000': 'Coleiras e acessórios',
+        '25051000': 'Areia sanitária',
+        '38089490': 'Antipulgas e antiparasitários',
+        '33051000': 'Shampoos',
+        '94049000': 'Camas e almofadas',
+    }
+    
+    ncms_encontrados = df_temp['NCM_normalizado'].unique()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**✅ NCMs Conhecidos Encontrados:**")
+        encontrados_corretos = [ncm for ncm in ncms_encontrados if ncm in ncms_corretos_pet]
+        if encontrados_corretos:
+            for ncm in encontrados_corretos:
+                st.write(f"- `{ncm}` - {ncms_corretos_pet[ncm]}")
+        else:
+            st.write("_Nenhum NCM padrão encontrado_")
+    
+    with col2:
+        st.write("**⚠️ NCMs que Precisam Validação:**")
+        encontrados_desconhecidos = [ncm for ncm in ncms_encontrados if ncm not in ncms_corretos_pet]
+        if encontrados_desconhecidos:
+            for ncm in encontrados_desconhecidos[:10]:  # Limita a 10
+                count = (df_temp['NCM_normalizado'] == ncm).sum()
+                st.write(f"- `{ncm}` ({count} produtos)")
+        else:
+            st.write("_Todos os NCMs são conhecidos!_")
 
 def display_validation_results(response):
     """Exibe resultados da validação de forma estruturada"""
@@ -98,10 +167,3 @@ def display_validation_results(response):
         """)
     
     st.markdown("---")
-
-def create_ncm_summary_chart(validation_data):
-    """Cria gráfico resumo de validação (se houver dados estruturados)"""
-    
-    # Esta função pode ser expandida se você quiser processar
-    # a resposta do agente e criar visualizações automáticas
-    pass

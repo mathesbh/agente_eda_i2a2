@@ -4,7 +4,7 @@ import zipfile
 import chardet
 import io
 from agent_setup_ncm import initialize_llm, create_agent
-from utils_ncm import generate_plot, auto_validate_ncm, display_validation_results
+from utils_ncm import generate_plot, display_validation_results, quick_ncm_validation
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,40 +37,56 @@ def main():
             if llm:
                 agent = create_agent(llm, df)
 
-                # VALIDAÇÃO AUTOMÁTICA AO CARREGAR
-                st.subheader("🔍 Validação Automática de Conformidade")
+                # VALIDAÇÃO MANUAL RÁPIDA (backup se o agente falhar)
+                with st.expander("🔧 Validação Manual Rápida (não usa IA)"):
+                    st.info("Use esta opção se a validação automática com IA apresentar problemas")
+                    if st.button("Executar Validação Manual"):
+                        quick_ncm_validation(df)
+
+                # VALIDAÇÃO AUTOMÁTICA COM IA
+                st.subheader("🔍 Validação Automática de Conformidade com IA")
                 if st.button("🚀 Iniciar Validação Automática de NCM"):
                     with st.spinner("Validando NCMs das notas fiscais..."):
                         try:
                             validation_query = """
-                            Faça uma validação de conformidade de NCM das notas fiscais neste DataFrame:
+                            Faça validação de conformidade de NCM seguindo EXATAMENTE estes passos:
                             
-                            PASSO 1 - Exploração básica:
-                            - Mostre df.shape para ver quantos registros existem
-                            - Mostre df.columns para identificar as colunas
-                            - Identifique qual coluna contém NCM
-                            - Mostre df['NCM'].value_counts() para ver os NCMs mais comuns
+                            PASSO 1 - Identificar colunas (CRÍTICO):
+                            Execute: df.columns.tolist()
+                            Mostre TODAS as colunas encontradas.
                             
-                            PASSO 2 - Análise dos NCMs:
-                            Para cada NCM único encontrado, verifique:
-                            - Se tem 8 dígitos (removendo pontos)
-                            - Se é um NCM válido na tabela TIPI
-                            - Se é apropriado para produtos do setor pet
+                            PASSO 2 - Encontrar colunas NCM e Descrição:
+                            Encontre a coluna que contém NCM (pode ser 'NCM', 'CODIGO_NCM', etc.)
+                            Encontre a coluna com descrição do produto (pode ser 'DESCRICAO_PRODUTO', 'PRODUTO', etc.)
+                            Use os nomes EXATOS (case-sensitive) das colunas.
                             
-                            PASSO 3 - Identifique problemas:
-                            Liste os NCMs com problemas e explique:
-                            - Qual NCM está incorreto
-                            - Em quais produtos aparece
-                            - Por que está incorreto
-                            - Qual deveria ser o NCM correto
-                            - Nível de severidade
+                            PASSO 3 - Normalizar NCMs:
+                            Execute: df['NCM_norm'] = df[nome_coluna_ncm].astype(str).str.replace('.','').str.replace('-','')
+                            Mostre: df['NCM_norm'].value_counts()
                             
-                            PASSO 4 - Resumo:
-                            - Percentual aproximado de conformidade
-                            - Principais problemas encontrados
-                            - Ações recomendadas
+                            PASSO 4 - Agrupar e analisar:
+                            Para cada NCM único, pegue um exemplo de descrição de produto.
+                            Execute: df.groupby('NCM_norm')[nome_coluna_descricao].first()
                             
-                            IMPORTANTE: Use apenas operações pandas simples. Não crie funções complexas.
+                            PASSO 5 - Identificar problemas:
+                            Analise cada NCM único e verifique:
+                            - Se tem 8 dígitos
+                            - Se é válido para setor pet
+                            - Se está adequado à descrição do produto
+                            
+                            Liste os NCMs com problemas em formato de tabela markdown:
+                            | NCM | Produto Exemplo | Problema | NCM Sugerido | Severidade |
+                            
+                            PASSO 6 - Resumo final:
+                            - Total de NCMs únicos
+                            - NCMs com problemas
+                            - Percentual de conformidade
+                            - Principais ações recomendadas
+                            
+                            IMPORTANTE: 
+                            - Use astype(str) ANTES de qualquer operação de string no NCM
+                            - Use os nomes EXATOS das colunas que aparecem em df.columns
+                            - Não crie funções separadas - use apenas operações pandas inline
                             """
                             
                             response = agent.run(validation_query)
@@ -78,11 +94,18 @@ def main():
                             
                         except Exception as e:
                             st.error(f"❌ Erro ao processar validação: {str(e)}")
-                            st.info("💡 Tente fazer perguntas mais simples no chat abaixo.")
+                            st.info("💡 Tente usar a Validação Manual Rápida acima ou fazer perguntas mais simples no chat abaixo.")
+                            
+                            # Mostra informações de debug
+                            with st.expander("🔍 Informações de Debug"):
+                                st.write("**Colunas do DataFrame:**")
+                                st.write(df.columns.tolist())
+                                st.write("\n**Primeiras linhas:**")
+                                st.write(df.head())
 
                 # CHAT INTERATIVO
                 st.subheader("💬 Faça perguntas sobre os dados")
-                st.markdown("*Exemplos: 'Quais NCMs estão incorretos?', 'Mostre produtos com problemas fiscais', 'Análise detalhada da nota X'*")
+                st.markdown("*Exemplos: 'Mostre os NCMs únicos', 'O NCM 23099010 está correto?', 'Liste produtos com NCM 9503'*")
                 
                 user_query = st.text_input("Sua pergunta:")
 
