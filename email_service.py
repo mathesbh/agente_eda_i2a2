@@ -111,11 +111,15 @@ class EmailService:
     def gerar_corpo_email_html(
         self, 
         total_produtos: int,
+        ncms_unicos: int,
         ncms_problemas: int,
         percentual_conformidade: float,
         problemas_lista: str
     ) -> str:
         """Gera corpo HTML do e-mail de relatório"""
+        
+        status_cor = '#4CAF50' if percentual_conformidade >= 80 else '#f44336'
+        status_texto = '✅ BOM' if percentual_conformidade >= 80 else '⚠️ REQUER ATENÇÃO'
         
         html = f"""
         <!DOCTYPE html>
@@ -126,114 +130,211 @@ class EmailService:
                     font-family: Arial, sans-serif;
                     line-height: 1.6;
                     color: #333;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
                 }}
                 .header {{
                     background-color: #4CAF50;
                     color: white;
-                    padding: 20px;
+                    padding: 30px;
                     text-align: center;
+                    border-radius: 10px 10px 0 0;
+                }}
+                .header h1 {{
+                    margin: 0;
+                    font-size: 24px;
+                }}
+                .header p {{
+                    margin: 5px 0 0 0;
+                    font-size: 14px;
+                    opacity: 0.9;
                 }}
                 .content {{
-                    padding: 20px;
+                    padding: 30px;
+                    background-color: #ffffff;
+                    border: 1px solid #ddd;
+                    border-top: none;
                 }}
                 .metrics {{
-                    display: flex;
-                    justify-content: space-around;
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 15px;
                     margin: 20px 0;
                 }}
                 .metric {{
                     text-align: center;
-                    padding: 15px;
+                    padding: 20px;
                     background-color: #f5f5f5;
-                    border-radius: 5px;
+                    border-radius: 8px;
+                    border-left: 4px solid #4CAF50;
                 }}
                 .metric-value {{
-                    font-size: 24px;
+                    font-size: 32px;
                     font-weight: bold;
-                    color: #4CAF50;
+                    color: #2E7D32;
+                    margin: 10px 0;
                 }}
                 .metric-label {{
-                    font-size: 14px;
+                    font-size: 13px;
                     color: #666;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }}
+                .status-box {{
+                    padding: 20px;
+                    background-color: {status_cor}15;
+                    border-left: 4px solid {status_cor};
+                    border-radius: 5px;
+                    margin: 20px 0;
+                }}
+                .status-box h3 {{
+                    margin: 0 0 10px 0;
+                    color: {status_cor};
                 }}
                 .problems {{
                     margin-top: 20px;
-                    padding: 15px;
+                    padding: 20px;
                     background-color: #fff3cd;
                     border-left: 4px solid #ffc107;
+                    border-radius: 5px;
                 }}
-                .footer {{
-                    margin-top: 30px;
-                    padding: 15px;
-                    background-color: #f5f5f5;
-                    text-align: center;
-                    font-size: 12px;
-                    color: #666;
+                .problems h3 {{
+                    margin: 0 0 15px 0;
+                    color: #856404;
                 }}
                 table {{
                     width: 100%;
                     border-collapse: collapse;
                     margin-top: 15px;
+                    font-size: 13px;
                 }}
                 th, td {{
-                    padding: 10px;
+                    padding: 12px;
                     text-align: left;
                     border-bottom: 1px solid #ddd;
                 }}
                 th {{
                     background-color: #4CAF50;
                     color: white;
+                    font-weight: bold;
+                }}
+                tr:hover {{
+                    background-color: #f5f5f5;
+                }}
+                .actions {{
+                    margin-top: 25px;
+                    padding: 20px;
+                    background-color: #e3f2fd;
+                    border-radius: 5px;
+                }}
+                .actions h3 {{
+                    margin: 0 0 15px 0;
+                    color: #1976d2;
+                }}
+                .actions ul {{
+                    margin: 10px 0;
+                    padding-left: 20px;
+                }}
+                .actions li {{
+                    margin: 8px 0;
+                }}
+                .footer {{
+                    margin-top: 30px;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                    text-align: center;
+                    font-size: 12px;
+                    color: #666;
+                    border-radius: 0 0 10px 10px;
+                }}
+                .attachment-note {{
+                    margin-top: 20px;
+                    padding: 15px;
+                    background-color: #e8f5e9;
+                    border-left: 4px solid #4CAF50;
+                    border-radius: 5px;
                 }}
             </style>
         </head>
         <body>
             <div class="header">
-                <h1>🐾 Relatório de Conformidade NCM - Setor Pet</h1>
+                <h1>🐾 Relatório de Conformidade Fiscal NCM</h1>
+                <p>Setor Pet - Validação de Notas Fiscais</p>
             </div>
             
             <div class="content">
-                <h2>Resumo da Validação</h2>
+                <h2 style="color: #2E7D32; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">
+                    Resumo Executivo
+                </h2>
                 
-                <div class="metrics" style="display: block;">
-                    <div class="metric" style="margin-bottom: 10px;">
+                <div class="metrics">
+                    <div class="metric">
                         <div class="metric-label">Total de Produtos</div>
                         <div class="metric-value">{total_produtos}</div>
                     </div>
                     
-                    <div class="metric" style="margin-bottom: 10px;">
-                        <div class="metric-label">Produtos com Problemas</div>
-                        <div class="metric-value" style="color: #f44336;">{ncms_problemas}</div>
+                    <div class="metric">
+                        <div class="metric-label">NCMs Únicos</div>
+                        <div class="metric-value" style="color: #1976d2;">{ncms_unicos}</div>
                     </div>
                     
-                    <div class="metric" style="margin-bottom: 10px;">
+                    <div class="metric" style="border-left-color: {'#4CAF50' if ncms_problemas == 0 else '#f44336'};">
+                        <div class="metric-label">Produtos com Problemas</div>
+                        <div class="metric-value" style="color: {'#4CAF50' if ncms_problemas == 0 else '#f44336'};">
+                            {ncms_problemas}
+                        </div>
+                    </div>
+                    
+                    <div class="metric" style="border-left-color: {status_cor};">
                         <div class="metric-label">Conformidade</div>
-                        <div class="metric-value" style="color: {'#4CAF50' if percentual_conformidade >= 80 else '#f44336'};">
+                        <div class="metric-value" style="color: {status_cor};">
                             {percentual_conformidade:.1f}%
                         </div>
                     </div>
                 </div>
                 
+                <div class="status-box">
+                    <h3>Status Geral: {status_texto}</h3>
+                    <p style="margin: 0;">
+                        {
+                            'Parabéns! Suas notas fiscais estão em conformidade.' if percentual_conformidade >= 95
+                            else 'Boa conformidade geral. Algumas correções menores são recomendadas.' if percentual_conformidade >= 80
+                            else 'Atenção necessária. Múltiplos problemas foram identificados e requerem correção.'
+                        }
+                    </p>
+                </div>
+                
                 {f'''
                 <div class="problems">
-                    <h3>⚠️ Problemas Encontrados</h3>
+                    <h3>⚠️ Problemas Identificados</h3>
                     {problemas_lista}
                 </div>
-                ''' if ncms_problemas > 0 else '<p style="color: #4CAF50; font-weight: bold;">✅ Nenhum problema encontrado! Todas as notas fiscais estão em conformidade.</p>'}
+                ''' if ncms_problemas > 0 else '<p style="color: #4CAF50; font-weight: bold; text-align: center; padding: 20px; background-color: #e8f5e9; border-radius: 5px;">✅ Nenhum problema encontrado! Todas as notas fiscais estão em conformidade.</p>'}
                 
-                <p style="margin-top: 20px;">
-                    <strong>Ações Recomendadas:</strong>
-                </p>
-                <ul>
-                    <li>Revise os NCMs com problemas identificados</li>
-                    <li>Corrija as notas fiscais antes de emitir novas</li>
-                    <li>Consulte a tabela de referência para NCMs corretos</li>
-                    <li>Entre em contato com seu contador se necessário</li>
-                </ul>
+                <div class="actions">
+                    <h3>🎯 Ações Recomendadas</h3>
+                    <ul>
+                        <li><strong>Imediato:</strong> Revise os NCMs com problemas críticos identificados</li>
+                        <li><strong>Curto Prazo (7 dias):</strong> Corrija as notas fiscais antes de emitir novas</li>
+                        <li><strong>Médio Prazo (30 dias):</strong> Implemente processo de validação preventiva</li>
+                        <li><strong>Consultoria:</strong> Entre em contato com seu contador para casos complexos</li>
+                    </ul>
+                </div>
+                
+                <div class="attachment-note">
+                    <strong>📎 Relatório Completo em PDF</strong><br>
+                    O relatório detalhado com todas as análises e recomendações está anexado a este e-mail.
+                </div>
             </div>
             
             <div class="footer">
-                <p>Relatório gerado automaticamente pelo Sistema de Conformidade Fiscal NCM</p>
-                <p>Data: {__import__('datetime').datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+                <p><strong>Relatório gerado automaticamente</strong></p>
+                <p>Sistema de Conformidade Fiscal NCM - Setor Pet</p>
+                <p>Data: {__import__('datetime').datetime.now().strftime('%d/%m/%Y às %H:%M')}</p>
+                <p style="margin-top: 10px; font-size: 11px;">
+                    <em>Este é um relatório automático. Consulte um profissional contábil para orientações específicas.</em>
+                </p>
             </div>
         </body>
         </html>

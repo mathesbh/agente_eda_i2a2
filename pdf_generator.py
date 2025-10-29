@@ -151,35 +151,89 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 0.3*inch))
         
         # Detalhes dos Problemas
-        if problemas_df is not None and len(problemas_df) > 0:
+        if ncms_problemas > 0:
+            # Tem problemas identificados
             elements.append(PageBreak())
             elements.append(Paragraph("DETALHAMENTO DOS PROBLEMAS", self.styles['CustomHeading']))
             elements.append(Spacer(1, 0.2*inch))
             
-            # Converte DataFrame para lista
-            problemas_data = [problemas_df.columns.tolist()]
-            for idx, row in problemas_df.iterrows():
-                problemas_data.append([str(val)[:50] for val in row.tolist()])  # Limita tamanho
-            
-            # Cria tabela de problemas
-            if len(problemas_data) > 1:
-                problemas_table = Table(problemas_data, colWidths=[1.2*inch] * len(problemas_df.columns))
-                problemas_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f44336')),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 8),
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ]))
-                
-                elements.append(problemas_table)
+            if problemas_df is not None and len(problemas_df) > 0 and not problemas_df.empty:
+                # Verifica se não é o DataFrame dummy vazio
+                if problemas_df.columns.tolist() != ['Resumo'] and len(problemas_df.columns) > 1:
+                    # Tem dados reais na tabela
+                    # Converte DataFrame para lista
+                    problemas_data = [problemas_df.columns.tolist()]
+                    
+                    # Limita número de linhas para caber no PDF
+                    max_rows = 20
+                    df_to_show = problemas_df.head(max_rows)
+                    
+                    for idx, row in df_to_show.iterrows():
+                        # Limita tamanho de cada célula para 60 caracteres
+                        row_data = []
+                        for val in row.tolist():
+                            val_str = str(val)
+                            # Quebra texto longo
+                            if len(val_str) > 60:
+                                val_str = val_str[:57] + '...'
+                            row_data.append(val_str)
+                        problemas_data.append(row_data)
+                    
+                    # Cria tabela de problemas
+                    if len(problemas_data) > 1:
+                        # Calcula largura das colunas dinamicamente
+                        num_cols = len(problemas_df.columns)
+                        col_width = 6.5 * inch / num_cols  # Distribui igualmente
+                        
+                        problemas_table = Table(problemas_data, colWidths=[col_width] * num_cols)
+                        problemas_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f44336')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 9),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ]))
+                        
+                        elements.append(problemas_table)
+                        
+                        # Se teve mais problemas do que mostrou
+                        if len(problemas_df) > max_rows:
+                            elements.append(Spacer(1, 0.2*inch))
+                            elements.append(Paragraph(
+                                f"<i>Nota: Mostrando {max_rows} de {len(problemas_df)} problemas identificados. "
+                                f"Consulte a análise completa abaixo para todos os detalhes.</i>",
+                                self.styles['CustomBody']
+                            ))
+                else:
+                    # Não conseguiu extrair tabela, mas tem problemas
+                    elements.append(Paragraph(
+                        f"<b>⚠️ {ncms_problemas} problema(s) identificado(s) na análise.</b>",
+                        self.styles['CustomBody']
+                    ))
+                    elements.append(Spacer(1, 0.1*inch))
+                    elements.append(Paragraph(
+                        "<i>Consulte a seção 'Análise Detalhada' abaixo para descrição completa dos problemas encontrados.</i>",
+                        self.styles['CustomBody']
+                    ))
+            else:
+                # DataFrame vazio mas há problemas reportados
+                elements.append(Paragraph(
+                    f"<b>⚠️ {ncms_problemas} problema(s) identificado(s) na validação.</b>",
+                    self.styles['CustomBody']
+                ))
+                elements.append(Spacer(1, 0.1*inch))
+                elements.append(Paragraph(
+                    "<i>Os detalhes completos dos problemas estão descritos na seção 'Análise Detalhada' abaixo.</i>",
+                    self.styles['CustomBody']
+                ))
         else:
+            # Nenhum problema
             elements.append(Paragraph(
                 "✅ <b>Nenhum problema encontrado!</b> Todas as notas fiscais estão em conformidade.",
                 self.styles['CustomBody']
@@ -204,10 +258,27 @@ class PDFReportGenerator:
         
         elements.append(Spacer(1, 0.3*inch))
         
-        # Observações
+        # Observações e Análise Completa
         if observacoes:
-            elements.append(Paragraph("OBSERVAÇÕES ADICIONAIS", self.styles['CustomHeading']))
-            elements.append(Paragraph(observacoes, self.styles['CustomBody']))
+            elements.append(Paragraph("ANÁLISE DETALHADA", self.styles['CustomHeading']))
+            elements.append(Spacer(1, 0.1*inch))
+            
+            # Divide observações em parágrafos
+            paragrafos = observacoes.split('\n\n')
+            for para in paragrafos:
+                if para.strip():
+                    # Remove caracteres especiais que podem causar problemas no PDF
+                    para_limpo = para.replace('|', ' ').replace('```', '').strip()
+                    if para_limpo:
+                        try:
+                            elements.append(Paragraph(para_limpo, self.styles['CustomBody']))
+                            elements.append(Spacer(1, 0.05*inch))
+                        except:
+                            # Se der erro, adiciona como texto simples
+                            elements.append(Paragraph(
+                                f"<font size=9>{para_limpo[:500]}</font>",
+                                self.styles['CustomBody']
+                            ))
         
         # Rodapé
         elements.append(Spacer(1, 0.5*inch))
