@@ -20,8 +20,8 @@ class EmailService:
         # Configurações Mailtrap
         self.mailtrap_host = "sandbox.smtp.mailtrap.io"
         self.mailtrap_port = 2525
-        self.mailtrap_username = st.secrets["smtp"]["username"]
-        self.mailtrap_password = st.secrets["smtp"]["password"]
+        self.mailtrap_username = st.secrets["smtp"]["username"] or os.getenv("MAILTRAP_USERNAME")
+        self.mailtrap_password = st.secrets["smtp"]["password"] or os.getenv("MAILTRAP_PASSWORD")
         
         # Configurações SMTP Real (Gmail, Outlook, etc)
         self.smtp_server = "smtp.gmail.com"
