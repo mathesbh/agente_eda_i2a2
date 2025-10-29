@@ -3,8 +3,11 @@ import pandas as pd
 import zipfile
 import chardet
 import io
+import os
 from agent_setup_ncm import initialize_llm, create_agent
 from utils_ncm import generate_plot, display_validation_results, quick_ncm_validation
+from email_service import email_service
+from pdf_generator import pdf_generator
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,6 +15,24 @@ load_dotenv()
 def main():
     st.title("🐾 Agente de Conformidade Fiscal NCM - Setor Pet")
     st.markdown("**Validação automática de NCM em notas fiscais para clínicas veterinárias e pet shops**")
+
+    # Configuração de E-mail (sidebar)
+    with st.sidebar:
+        st.header("📧 Configurações de E-mail")
+        email_destinatario = st.text_input(
+            "E-mail para receber relatório:",
+            placeholder="seu@email.com",
+            help="Digite o e-mail onde deseja receber o relatório"
+        )
+        
+        enviar_email_auto = st.checkbox(
+            "Enviar e-mail automaticamente após validação",
+            value=False,
+            help="Se marcado, envia e-mail assim que a validação terminar"
+        )
+        
+        st.divider()
+        st.caption("💡 O relatório PDF será gerado automaticamente")
 
     uploaded_file = st.file_uploader("Faça upload do arquivo zip com o CSV de notas fiscais", type="zip")
 
@@ -90,7 +111,15 @@ def main():
                             """
                             
                             response = agent.run(validation_query)
+                            
+                            # Armazena resultado na sessão para usar no PDF/email
+                            st.session_state.validation_response = response
+                            st.session_state.validation_df = df
+                            
                             display_validation_results(response)
+                            
+                            # Gera relatório automaticamente
+                            gerar_e_exibir_relatorio(df, response, email_destinatario, enviar_email_auto)
                             
                         except Exception as e:
                             st.error(f"❌ Erro ao processar validação: {str(e)}")
@@ -125,6 +154,122 @@ def main():
             st.warning("⚠️ Por favor, insira sua chave OpenAI API para continuar.")
     else:
         st.info("📁 Por favor, faça upload de um arquivo zip contendo o CSV de notas fiscais.")
+
+
+def gerar_e_exibir_relatorio(df, response, email_destinatario, enviar_auto):
+    """Gera PDF e envia e-mail se configurado"""
+    
+    st.markdown("---")
+    st.subheader("📄 Relatório")
+    
+    # Extrai métricas da resposta
+    total_produtos = len(df)
+    ncm_cols = [col for col in df.columns if 'ncm' in col.lower()]
+    
+    if ncm_cols:
+        df_temp = df.copy()
+        df_temp['NCM_norm'] = df_temp[ncm_cols[0]].astype(str).str.replace('.', '').str.replace('-', '')
+        ncms_unicos = df_temp['NCM_norm'].nunique()
+    else:
+        ncms_unicos = 0
+    
+    # Tenta extrair número de problemas da resposta
+    ncms_problemas = response.lower().count('problema') // 2  # Estimativa
+    percentual_conformidade = ((total_produtos - ncms_problemas) / total_produtos * 100) if total_produtos > 0 else 100
+    
+    # Gera PDF
+    pdf_filename = "relatorio_ncm.pdf"
+    
+    try:
+        with st.spinner("Gerando relatório PDF..."):
+            # Cria DataFrame de problemas (simplificado)
+            problemas_df = pd.DataFrame({
+                'Status': ['Análise Completa'],
+                'Detalhes': ['Verifique o relatório completo para detalhes']
+            })
+            
+            pdf_path = pdf_generator.gerar_relatorio_pdf(
+                filename=pdf_filename,
+                total_produtos=total_produtos,
+                ncms_unicos=ncms_unicos,
+                ncms_problemas=ncms_problemas,
+                percentual_conformidade=percentual_conformidade,
+                problemas_df=problemas_df,
+                observacoes=response[:500]  # Primeiros 500 caracteres
+            )
+        
+        # Botões de Download e E-mail
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            with open(pdf_filename, "rb") as pdf_file:
+                pdf_bytes = pdf_file.read()
+                st.download_button(
+                    label="📥 Baixar Relatório PDF",
+                    data=pdf_bytes,
+                    file_name="relatorio_conformidade_ncm.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+        
+        with col2:
+            if email_destinatario:
+                if st.button("📧 Enviar Relatório por E-mail", use_container_width=True):
+                    enviar_relatorio_email(
+                        email_destinatario, 
+                        total_produtos,
+                        ncms_problemas,
+                        percentual_conformidade,
+                        response,
+                        pdf_filename
+                    )
+            else:
+                st.info("Configure o e-mail na sidebar para enviar relatório")
+        
+        # Envio automático
+        if enviar_auto and email_destinatario:
+            enviar_relatorio_email(
+                email_destinatario, 
+                total_produtos,
+                ncms_problemas,
+                percentual_conformidade,
+                response,
+                pdf_filename
+            )
+        
+        st.success("✅ Relatório PDF gerado com sucesso!")
+        
+    except Exception as e:
+        st.error(f"Erro ao gerar relatório: {str(e)}")
+
+
+def enviar_relatorio_email(destinatario, total, problemas, conformidade, response, pdf_path):
+    """Envia relatório por e-mail"""
+    
+    with st.spinner("Enviando e-mail..."):
+        # Prepara lista de problemas HTML
+        problemas_html = response.replace('\n', '<br>') if problemas > 0 else ""
+        
+        # Gera corpo do e-mail
+        corpo_html = email_service.gerar_corpo_email_html(
+            total_produtos=total,
+            ncms_problemas=problemas,
+            percentual_conformidade=conformidade,
+            problemas_lista=problemas_html
+        )
+        
+        # Envia e-mail
+        sucesso = email_service.enviar_relatorio_email(
+            destinatario=destinatario,
+            assunto="Relatório de Conformidade NCM - Setor Pet",
+            corpo_html=corpo_html,
+            pdf_path=pdf_path
+        )
+        
+        if sucesso:
+            st.success(f"✅ E-mail enviado para {destinatario}!")
+        else:
+            st.error("❌ Erro ao enviar e-mail. Verifique as configurações.")
 
 
 def load_data(uploaded_file):
@@ -190,6 +335,7 @@ def load_data(uploaded_file):
         st.error(f"❌ Erro ao processar arquivo: {str(e)}")
         return None
 
+
 def display_data_preview(df):
     st.write("📊 **Pré-visualização dos dados:**")
     st.dataframe(df.head())
@@ -208,9 +354,11 @@ def display_data_preview(df):
         else:
             st.metric("Coluna NCM", "Não detectada")
 
+
 def display_response(response):
     st.write("**💡 Resposta do Agente:**")
     st.write(response)
+
 
 if __name__ == "__main__":
     main()
